@@ -1,4 +1,3 @@
-
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 
@@ -48,7 +47,6 @@ import java.util.*;
  * be anomalous, the data is written to the output file in the
  * appropriate json format.
  * </ol>
- *
  */
 public class AnomalousPurchaseDetector {
 	/**
@@ -149,7 +147,7 @@ public class AnomalousPurchaseDetector {
 		System.out.println("Found " + numberOfAnomalies + " anomalies.");
 
 		System.out.println("Anomaly check took " +
-				(System.currentTimeMillis() - startTime) + " milliseconds.");
+				(System.currentTimeMillis() - startTime) + " milliseconds");
 		if (errorLogBuffer != null)
 			errorLogBuffer.close();
 	}
@@ -219,8 +217,9 @@ public class AnomalousPurchaseDetector {
 
 	/**
 	 * Function handles non-fatal errors in a centralized fashion.
+	 *
 	 * @param message The message to be displayed and logged in the file.
-	 * @param e The exception caused.
+	 * @param e       The exception caused.
 	 */
 	static void errorPrint(String message, Exception e) {
 		try {
@@ -236,8 +235,8 @@ public class AnomalousPurchaseDetector {
 				errorLogBuffer.write(message + "\n");
 			else {
 				errorLogBuffer.write(message + "\n");
-				errorLogBuffer.write("\t"+e.toString()+"\n");
-				errorLogBuffer.write("\t"+e.getLocalizedMessage()+"\n");
+				errorLogBuffer.write("\t" + e.toString() + "\n");
+				errorLogBuffer.write("\t" + e.getLocalizedMessage() + "\n");
 			}
 		} catch (IOException ioe) {
 			// What should we do if we can't even write an error log?
@@ -578,10 +577,10 @@ public class AnomalousPurchaseDetector {
 		 * depends on the state of the {@link AnomalousPurchaseDetector#NETWORK_MODEL}
 		 * constant.
 		 *
-		 * @param userids {@link ArrayList} of user ids who form the
-		 *                                immediate network around the user (D=1).
+		 * @param userids        {@link ArrayList} of user ids who form the
+		 *                       immediate network around the user (D=1).
 		 * @param befriendedTime Time at which these users were befriended.
-		 * @param user_id ID of the original root user (to exclude from the network).
+		 * @param user_id        ID of the original root user (to exclude from the network).
 		 */
 		UserNetworkBuilder(List<Integer> userids,
 		                   List<Long> befriendedTime, int user_id) {
@@ -623,9 +622,9 @@ public class AnomalousPurchaseDetector {
 		 * {@link AnomalousPurchaseDetector#NETWORK_MODEL} parameter)
 		 * the time of befriending.
 		 *
-		 * @param userids {@link ArrayList} of user ids who need to be added.
+		 * @param userids                {@link ArrayList} of user ids who need to be added.
 		 * @param incomingBefriendedTime Time at which these users were befriended.
-		 * @param original_user_id ID of the original root user
+		 * @param original_user_id       ID of the original root user
 		 *                               (to exclude from the network).
 		 */
 		void addAll(List<Integer> userids,
@@ -661,8 +660,9 @@ public class AnomalousPurchaseDetector {
 		 * {@link NetworkCalculationModel#IGNORE_BEFRIEND_TIMING}, but
 		 * is a little more involved if the value is set to
 		 * {@link NetworkCalculationModel#ACCOUNT_FOR_BEFRIEND_TIMING}.
+		 *
 		 * @param index Index of the user_id in the list
-		 *                    maintained within the object.
+		 *              maintained within the object.
 		 * @return {@link ArrayList} of valid {@link Purchase} objects.
 		 */
 		List<Purchase> getValidPurchases(int index) {
