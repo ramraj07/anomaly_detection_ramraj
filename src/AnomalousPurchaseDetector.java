@@ -7,9 +7,52 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
+/**
+ * <p>This program reads json files which form a social network of users
+ * that keeps dynamically changing and recording purchases made by these
+ * users. It then calculates if purchases coming from a simulated streaming
+ * json file are anomalous (where they are 3 standard deviations above the
+ * mean of purchases in a D<sup>th</sup> degree network around the user and
+ * exports these purchases to an output file.</p>
+ * <p>The overall flow of the program is as follows:</p>
+ * <ol>
+ * <li>The {@link AnomalousPurchaseDetector#main(String[])}
+ * function calls the readJsonStream() function for both
+ * the batch and stream log files, with options to only check for
+ * anomalies in the latter file.
+ * <li>The {@link AnomalousPurchaseDetector#readJsonStream(InputStream, boolean)}
+ * function reads the json files one line
+ * at a time and tries to load the data into a JsonEvent object.
+ * It then categorizes the type of data (4 types - D/T specification,
+ * befriending, unfriending and purchasing). Appropriate functions
+ * are then used to load the data into an {@link ArrayList} of
+ * {@link User} objects (which also contain the {@link Purchase}
+ * objects as an {@link ArrayList} object in each
+ * {@link User}) where the index of the object also conveniently
+ * serves as the user id.
+ * <li>The {@link AnomalousPurchaseDetector#readJsonStream(InputStream, boolean)}
+ * also calls the {@link AnomalousPurchaseDetector#checkForAnomaly(int, double, long)}
+ * function for each encountered purchase when dealing with the
+ * stream_log.json file.
+ * <li>The {@link AnomalousPurchaseDetector#checkForAnomaly(int, double, long)}
+ * function first forms a friend network
+ * of the {@link AnomalousPurchaseDetector#D}<sup>th</sup> degree
+ * with the help of a {@link UserNetworkBuilder} object
+ * and gets the {@link AnomalousPurchaseDetector#T} most recent
+ * purchases from this network (with
+ * sorting performed by a custom {@link Comparator} object
+ * ({@link Purchase.ComparePurchaseDates}) that implements
+ * the sorting rule specified in the project).
+ * <li>It then identifies if the purchase amount is anomalous with
+ * the help of a {@link MeanSTDCutoff} object. If the purchase is found to
+ * be anomalous, the data is written to the output file in the
+ * appropriate json format.
+ * </ol>
+ *
+ */
 public class AnomalousPurchaseDetector {
 	/**
-	 * <p>This Enum constant determines if the Network calculation
+	 * <p>This enum constant determines if the Network calculation
 	 * accounts for the time when users were befriended or not.
 	 * The original problem description requires that the local
 	 * network around a user be calculated based on the instantaneous
@@ -65,7 +108,7 @@ public class AnomalousPurchaseDetector {
 	private static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private static BufferedWriter writeOutputFile, errorLogBuffer;
 	private static int nErrors = 0;
-	private static String errorlogFileName = "error_log.txt";
+	private static String errorLogFileName = "error_log.txt";
 
 
 	/**
@@ -106,7 +149,7 @@ public class AnomalousPurchaseDetector {
 		System.out.println("Found " + numberOfAnomalies + " anomalies.");
 
 		System.out.println("Anomaly check took " +
-				(System.currentTimeMillis() - startTime) + " milliseconds");
+				(System.currentTimeMillis() - startTime) + " milliseconds.");
 		if (errorLogBuffer != null)
 			errorLogBuffer.close();
 	}
@@ -174,23 +217,27 @@ public class AnomalousPurchaseDetector {
 		br.close();
 	}
 
+	/**
+	 * Function handles non-fatal errors in a centralized fashion.
+	 * @param message The message to be displayed and logged in the file.
+	 * @param e The exception caused.
+	 */
 	static void errorPrint(String message, Exception e) {
 		try {
 			if (nErrors == 0) {
-				errorlogFileName = "error_log_" +
+				errorLogFileName = "error_log_" +
 						(new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()))
 						+ ".txt";
 				errorLogBuffer = new BufferedWriter(
-						new FileWriter(errorlogFileName));
+						new FileWriter(errorLogFileName));
 
 			}
 			if (e == null)
 				errorLogBuffer.write(message + "\n");
 			else {
 				errorLogBuffer.write(message + "\n");
-				errorLogBuffer.write(e.getLocalizedMessage());
-				errorLogBuffer.write(e.getStackTrace().toString());
-
+				errorLogBuffer.write("\t"+e.toString()+"\n");
+				errorLogBuffer.write("\t"+e.getLocalizedMessage()+"\n");
 			}
 		} catch (IOException ioe) {
 			// What should we do if we can't even write an error log?
@@ -204,7 +251,7 @@ public class AnomalousPurchaseDetector {
 					nErrors +
 					" messages, suppressing display of " +
 					"further messages. Check " +
-					errorlogFileName + " for details.");
+					errorLogFileName + " for details.");
 		}
 
 
@@ -239,7 +286,9 @@ public class AnomalousPurchaseDetector {
 				user_id);
 
 		int nPurchasesInThisNetwork = 0;
-
+		// This code block tries to only maintain T Purchases in memory, so that time
+		// is not wasted sorting through lists of thousands of purchases when larger
+		// networks are encountered.
 		Purchase.ComparePurchaseDates purchaseComparator = new Purchase.ComparePurchaseDates();
 		Purchase[] recentPurchasesInThisGroup = new Purchase[T];
 		for (int i = 0; i < users_in_this_network.idsOfUsersInThisList.size(); i++) {
@@ -380,7 +429,10 @@ public class AnomalousPurchaseDetector {
 		users.set(user_id, user);
 	}
 
-
+	/**
+	 * enum that stores different Network Calculation Models.
+	 * More may be added in the future.
+	 */
 	static enum NetworkCalculationModel {
 		IGNORE_BEFRIEND_TIMING,
 		ACCOUNT_FOR_BEFRIEND_TIMING
@@ -520,9 +572,16 @@ public class AnomalousPurchaseDetector {
 		List<Long> befriendedDate;
 
 		/**
-		 * @param userids
-		 * @param befriendedTime
-		 * @param user_id
+		 * The constructor builds the unique list of users in the
+		 * D<sup>th</sup> degree social network around the given
+		 * user id (excluding that user). The exact implementation
+		 * depends on the state of the {@link AnomalousPurchaseDetector#NETWORK_MODEL}
+		 * constant.
+		 *
+		 * @param userids {@link ArrayList} of user ids who form the
+		 *                                immediate network around the user (D=1).
+		 * @param befriendedTime Time at which these users were befriended.
+		 * @param user_id ID of the original root user (to exclude from the network).
 		 */
 		UserNetworkBuilder(List<Integer> userids,
 		                   List<Long> befriendedTime, int user_id) {
@@ -559,9 +618,15 @@ public class AnomalousPurchaseDetector {
 		}
 
 		/**
-		 * @param userids
-		 * @param incomingBefriendedTime
-		 * @param original_user_id
+		 * Function adds all the given user ids to the list maintained
+		 * within the object including (if specified by the
+		 * {@link AnomalousPurchaseDetector#NETWORK_MODEL} parameter)
+		 * the time of befriending.
+		 *
+		 * @param userids {@link ArrayList} of user ids who need to be added.
+		 * @param incomingBefriendedTime Time at which these users were befriended.
+		 * @param original_user_id ID of the original root user
+		 *                               (to exclude from the network).
 		 */
 		void addAll(List<Integer> userids,
 		            List<Long> incomingBefriendedTime,
@@ -590,8 +655,15 @@ public class AnomalousPurchaseDetector {
 		}
 
 		/**
-		 * @param index
-		 * @return
+		 * Function returns all the valid purchases associated with
+		 * this network. "Validity" is simple if
+		 * {@link AnomalousPurchaseDetector#NETWORK_MODEL} is set to
+		 * {@link NetworkCalculationModel#IGNORE_BEFRIEND_TIMING}, but
+		 * is a little more involved if the value is set to
+		 * {@link NetworkCalculationModel#ACCOUNT_FOR_BEFRIEND_TIMING}.
+		 * @param index Index of the user_id in the list
+		 *                    maintained within the object.
+		 * @return {@link ArrayList} of valid {@link Purchase} objects.
 		 */
 		List<Purchase> getValidPurchases(int index) {
 			ArrayList<Purchase> validPurchases = new ArrayList<>();
