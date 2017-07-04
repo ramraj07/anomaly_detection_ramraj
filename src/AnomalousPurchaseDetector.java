@@ -41,6 +41,7 @@ public class AnomalousPurchaseDetector {
 	 * particular transaction be to be considered anomalous.
 	 */
 	static final int NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF = 3;
+	private static final int MAX_ERRORS = 25;
 	/**
 	 * The variable which specifies how many degrees the network around
 	 * each user must be calculated for. Defaults to 2, and is read from
@@ -51,21 +52,20 @@ public class AnomalousPurchaseDetector {
 	 * The variable which specifies the number of transactions in the recent
 	 * past within a network that should be considered for anomaly calculation.
 	 */
-	 static int T = 50;
+	static int T = 50;
 	/**
 	 * Master ArrayList that holds all the {@link User} objects of the program.
 	 * The purchases made by these users are also stored inside their own objects.
 	 */
-	 static List<User> users = new ArrayList<>();
-
+	static List<User> users = new ArrayList<>();
 	/**
 	 * Internal variables that are used to keep count, format dates and write files.
- 	 */
+	 */
 	private static long purchaseCount = 0, numberOfAnomalies = 0;
 	private static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-	private static BufferedWriter writeOutputFile,errorLogBuffer;
-	private static final int MAX_ERRORS = 25; private static int nErrors=0;
-	private static String errorlogFileName="error_log.txt";
+	private static BufferedWriter writeOutputFile, errorLogBuffer;
+	private static int nErrors = 0;
+	private static String errorlogFileName = "error_log.txt";
 
 
 	/**
@@ -87,23 +87,27 @@ public class AnomalousPurchaseDetector {
 		final String batchFilePath = args[0];
 		final String streamFilePath = args[1];
 		final String outputFilePath = args[2];
-
-		readJsonStream(
-				new FileInputStream(
-						batchFilePath), false);
 		final long startTime = System.currentTimeMillis();
-		writeOutputFile = new BufferedWriter(
-				new FileWriter(outputFilePath));
 
-		readJsonStream(
-				new FileInputStream(
-						streamFilePath), true);
-		writeOutputFile.close();
+		try {
+			readJsonStream(
+					new FileInputStream(
+							batchFilePath), false);
+			writeOutputFile = new BufferedWriter(
+					new FileWriter(outputFilePath));
+
+			readJsonStream(
+					new FileInputStream(
+							streamFilePath), true);
+			writeOutputFile.close();
+		} catch (FileNotFoundException fo) {
+			errorPrint("ERROR! One of the input files was not found in the specified path.", fo);
+		}
 		System.out.println("Found " + numberOfAnomalies + " anomalies.");
 
 		System.out.println("Anomaly check took " +
 				(System.currentTimeMillis() - startTime) + " milliseconds");
-		if (errorLogBuffer!=null)
+		if (errorLogBuffer != null)
 			errorLogBuffer.close();
 	}
 
@@ -121,9 +125,9 @@ public class AnomalousPurchaseDetector {
 	 * @param checkForAnomaly Boolean argument which if true would make the
 	 *                        function call the checkForAnomaly method
 	 *                        to check if purchases are anomalous.
-	 * @throws IOException    IOException is thrown if the file reading is interrupted.
+	 * @throws IOException IOException is thrown if the file reading is interrupted.
 	 */
-	 static void readJsonStream(
+	static void readJsonStream(
 			InputStream in,
 			boolean checkForAnomaly) throws IOException {
 		BufferedReader br = new BufferedReader(new InputStreamReader(in));
@@ -159,49 +163,49 @@ public class AnomalousPurchaseDetector {
 					}
 				} else if (jsonEvent.D != null) {
 					D = Integer.parseInt(jsonEvent.D);
-					if (jsonEvent.T!=null)
+					if (jsonEvent.T != null)
 						T = Integer.parseInt(jsonEvent.T);
 				}
-			} catch(ParseException pe) {
-				errorPrint("Failed to parse line: "+strLine,pe);
+			} catch (ParseException pe) {
+				errorPrint("Failed to parse line: " + strLine, pe);
 			} catch (Exception e) {
-				errorPrint("Error reading line \""+strLine+"\"",e);
+				errorPrint("Error reading line \"" + strLine + "\"", e);
 			}
 		br.close();
 	}
 
-	static void errorPrint(String message,Exception e)  {
-	 	  try {
-		      if (nErrors == 0) {
-			      errorlogFileName = "error_log_" +
-					      (new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()))
-					      + ".txt";
-			      errorLogBuffer = new BufferedWriter(
-					      new FileWriter(errorlogFileName));
+	static void errorPrint(String message, Exception e) {
+		try {
+			if (nErrors == 0) {
+				errorlogFileName = "error_log_" +
+						(new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()))
+						+ ".txt";
+				errorLogBuffer = new BufferedWriter(
+						new FileWriter(errorlogFileName));
 
-		      }
-		      if (e == null)
-			      errorLogBuffer.write(message + "\n");
-		      else {
-			      errorLogBuffer.write(message + "\n");
-			      errorLogBuffer.write(e.getLocalizedMessage());
-			      errorLogBuffer.write(e.getStackTrace().toString());
+			}
+			if (e == null)
+				errorLogBuffer.write(message + "\n");
+			else {
+				errorLogBuffer.write(message + "\n");
+				errorLogBuffer.write(e.getLocalizedMessage());
+				errorLogBuffer.write(e.getStackTrace().toString());
 
-		      }
-	      } catch (IOException ioe) {
-	 	  	// What should we do if we can't even write an error log?
-	      }
+			}
+		} catch (IOException ioe) {
+			// What should we do if we can't even write an error log?
+		}
 		nErrors++;
 
-		if (nErrors<MAX_ERRORS) {
-	 		System.out.println(message);
-	    } else if (nErrors==MAX_ERRORS) {
-	 		System.out.println("Program already displayed "+
-				    nErrors+
-				    " messages, suppressing display of "+
-				    "further messages. Check "+
-				    errorlogFileName+ " for details.");
-	    }
+		if (nErrors < MAX_ERRORS) {
+			System.out.println(message);
+		} else if (nErrors == MAX_ERRORS) {
+			System.out.println("Program already displayed " +
+					nErrors +
+					" messages, suppressing display of " +
+					"further messages. Check " +
+					errorlogFileName + " for details.");
+		}
 
 
 	}
@@ -224,7 +228,7 @@ public class AnomalousPurchaseDetector {
 	 * @param timestamp       The timestamp associated with the incoming purchase.
 	 * @throws IOException If there was a problem reading the file or writing to the file.
 	 */
-	 static void checkForAnomaly(
+	static void checkForAnomaly(
 			final int user_id,
 			final double purchase_amount,
 			final long timestamp) throws IOException {
@@ -293,7 +297,7 @@ public class AnomalousPurchaseDetector {
 	 *
 	 * @param user_id Incoming user idsOfUsersInThisList to check and add.
 	 */
-	 static void checkAndCreateUserIfNeeded(
+	static void checkAndCreateUserIfNeeded(
 			final int user_id) {
 		if (users.size() <= user_id) {
 			for (int i = users.size(); i < user_id; i++)
@@ -322,7 +326,7 @@ public class AnomalousPurchaseDetector {
 	 *                     if false , the action is to unfriend each other
 	 * @param timestamp    timestamp of the action
 	 */
-	 static void addOrRemoveFriendship(
+	static void addOrRemoveFriendship(
 			final int id1,
 			final int id2,
 			final boolean befriendFlag,
@@ -352,7 +356,7 @@ public class AnomalousPurchaseDetector {
 	 * @param purchase_amount Purchase amount
 	 * @param timestamp       Purchase timestamp
 	 */
-	 static void addPurchase(
+	static void addPurchase(
 			final int user_id,
 			final double purchase_amount,
 			final long timestamp) {
@@ -377,7 +381,7 @@ public class AnomalousPurchaseDetector {
 	}
 
 
-	 static enum NetworkCalculationModel {
+	static enum NetworkCalculationModel {
 		IGNORE_BEFRIEND_TIMING,
 		ACCOUNT_FOR_BEFRIEND_TIMING
 	}
@@ -388,7 +392,7 @@ public class AnomalousPurchaseDetector {
 	 * {@link AnomalousPurchaseDetector#checkForAnomaly(int, double, long)}
 	 * function.
 	 */
-	 static class MeanSTDCutoff {
+	static class MeanSTDCutoff {
 		double mean = 0;
 		double std = 0;
 		double cutoff = 0;
@@ -398,8 +402,9 @@ public class AnomalousPurchaseDetector {
 		 * deviation of an array of {@link Purchase} objects
 		 * and returns a {@link MeanSTDCutoff} object containing
 		 * the results.
+		 *
 		 * @param recentPurchasesInThisGroup Array of {@link Purchase} objects
-		 * @param nPurchasesToConsider Number of purchases to consider in the above array
+		 * @param nPurchasesToConsider       Number of purchases to consider in the above array
 		 */
 		MeanSTDCutoff(Purchase[] recentPurchasesInThisGroup,
 		              final int nPurchasesToConsider) {
@@ -411,7 +416,7 @@ public class AnomalousPurchaseDetector {
 				std += (thisAmount - mean) * (thisAmount - mean);
 			}
 			std = Math.sqrt(std / nPurchasesToConsider);
-			cutoff = mean+NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF*std;
+			cutoff = mean + NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF * std;
 		}
 	}
 
@@ -420,7 +425,7 @@ public class AnomalousPurchaseDetector {
 	 * json file line by line. These are the only elements
 	 * expected to be read in from the json file.
 	 */
-	 static class JsonEventUnit {
+	static class JsonEventUnit {
 		String D;
 		String T;
 		String event_type;
@@ -440,7 +445,7 @@ public class AnomalousPurchaseDetector {
 	 * purchases made by the user. It also includes methods that
 	 * can be used to add or remove friends to the user.
 	 */
-	 static class User {
+	static class User {
 		int id;
 		ArrayList<Integer> friends = new ArrayList<>();
 		ArrayList<Long> befriendedTime = new ArrayList<>();
@@ -450,18 +455,18 @@ public class AnomalousPurchaseDetector {
 			purchases.ensureCapacity(T);
 		}
 
-		 void addAFriend(final int user_id, final long time_stamp) {
+		void addAFriend(final int user_id, final long time_stamp) {
 			friends.add(user_id);
 			befriendedTime.add(time_stamp);
 		}
 
-		 void removeAFriend(final int user_id) {
+		void removeAFriend(final int user_id) {
 			final int friendIndex = friends.indexOf(user_id);
 			if (friendIndex == -1) {
 				errorPrint(
 						"Warning: JSON asked to unfriend " +
 								id + " and " + user_id +
-								" but they were not friends to begin with.",null);
+								" but they were not friends to begin with.", null);
 				return;
 			}
 			friends.remove(friendIndex);
@@ -478,7 +483,7 @@ public class AnomalousPurchaseDetector {
 	 * that can compare purchases based on different criteria
 	 * as desired.
 	 */
-	 static class Purchase {
+	static class Purchase {
 		int user_id;
 		double amount;
 		long timestamp;
@@ -515,7 +520,6 @@ public class AnomalousPurchaseDetector {
 		List<Long> befriendedDate;
 
 		/**
-		 *
 		 * @param userids
 		 * @param befriendedTime
 		 * @param user_id
@@ -555,7 +559,6 @@ public class AnomalousPurchaseDetector {
 		}
 
 		/**
-		 *
 		 * @param userids
 		 * @param incomingBefriendedTime
 		 * @param original_user_id
@@ -587,7 +590,6 @@ public class AnomalousPurchaseDetector {
 		}
 
 		/**
-		 *
 		 * @param index
 		 * @return
 		 */
