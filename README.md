@@ -62,3 +62,6 @@ The program tries to handle errors smoothly in several places:
           * If a purchase is added to a user id that doesn't exist, it is created and then added to it.
     
  4. All non-fatal errors are logged into an error_log.txt file; if more than 25 non-fatal errors are generated, they are not displayed anymore but only logged in the error file.
+
+## Testing
+The code was tested with >10 different test cases; the algorithm was quickly remade with MATLAB to generate test cases and results and crosschecked. The repository was pulled onto a Cloud9 dev environment to verify that it runs smoothly in a Linux environment.
