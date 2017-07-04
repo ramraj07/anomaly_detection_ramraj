@@ -63,7 +63,10 @@ public class AnomalousPurchaseDetector {
  	 */
 	private static long purchaseCount = 0, numberOfAnomalies = 0;
 	private static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-	private static BufferedWriter writeOutputFile;
+	private static BufferedWriter writeOutputFile,errorLogBuffer;
+	private static final int MAX_ERRORS = 25; private static int nErrors=0;
+	private static String errorlogFileName="error_log.txt";
+
 
 	/**
 	 * The main function takes three arguments for the file paths
@@ -100,6 +103,8 @@ public class AnomalousPurchaseDetector {
 
 		System.out.println("Anomaly check took " +
 				(System.currentTimeMillis() - startTime) + " milliseconds");
+		if (errorLogBuffer!=null)
+			errorLogBuffer.close();
 	}
 
 	/**
@@ -126,6 +131,9 @@ public class AnomalousPurchaseDetector {
 		Gson gson = new GsonBuilder().create();
 		while ((strLine = br.readLine()) != null)
 			try {
+				// Parse each line as a separate JSON string,
+				// easier to deal with discrepancies between
+				// the json format and guidelines
 				JsonEventUnit jsonEvent = gson.fromJson(strLine, JsonEventUnit.class);
 				boolean befriendFlag = true;
 				if (jsonEvent == null)
@@ -151,14 +159,51 @@ public class AnomalousPurchaseDetector {
 					}
 				} else if (jsonEvent.D != null) {
 					D = Integer.parseInt(jsonEvent.D);
-					T = Integer.parseInt(jsonEvent.T);
+					if (jsonEvent.T!=null)
+						T = Integer.parseInt(jsonEvent.T);
 				}
 			} catch(ParseException pe) {
-				System.out.println("Failed to parse line: "+strLine);
+				errorPrint("Failed to parse line: "+strLine,pe);
 			} catch (Exception e) {
-				e.printStackTrace();
+				errorPrint("Error reading line \""+strLine+"\"",e);
 			}
 		br.close();
+	}
+
+	static void errorPrint(String message,Exception e)  {
+	 	  try {
+		      if (nErrors == 0) {
+			      errorlogFileName = "error_log_" +
+					      (new SimpleDateFormat("yyyyMMddHHmmss").format(new Date()))
+					      + ".txt";
+			      errorLogBuffer = new BufferedWriter(
+					      new FileWriter(errorlogFileName));
+
+		      }
+		      if (e == null)
+			      errorLogBuffer.write(message + "\n");
+		      else {
+			      errorLogBuffer.write(message + "\n");
+			      errorLogBuffer.write(e.getLocalizedMessage());
+			      errorLogBuffer.write(e.getStackTrace().toString());
+
+		      }
+	      } catch (IOException ioe) {
+	 	  	// What should we do if we can't even write an error log?
+	      }
+		nErrors++;
+
+		if (nErrors<MAX_ERRORS) {
+	 		System.out.println(message);
+	    } else if (nErrors==MAX_ERRORS) {
+	 		System.out.println("Program already displayed "+
+				    nErrors+
+				    " messages, suppressing display of "+
+				    "further messages. Check "+
+				    errorlogFileName+ " for details.");
+	    }
+
+
 	}
 
 	/**
@@ -183,23 +228,23 @@ public class AnomalousPurchaseDetector {
 			final int user_id,
 			final double purchase_amount,
 			final long timestamp) throws IOException {
-
+		checkAndCreateUserIfNeeded(user_id);
 		UserNetworkBuilder users_in_this_network = new UserNetworkBuilder(
 				users.get(user_id).friends,
 				users.get(user_id).befriendedTime,
 				user_id);
 
-		int nPurchases = 0;
+		int nPurchasesInThisNetwork = 0;
 
 		Purchase.ComparePurchaseDates purchaseComparator = new Purchase.ComparePurchaseDates();
 		Purchase[] recentPurchasesInThisGroup = new Purchase[T];
 		for (int i = 0; i < users_in_this_network.idsOfUsersInThisList.size(); i++) {
 			List<Purchase> thisUsersPurchases = users_in_this_network.getValidPurchases(i);
 			for (Purchase purchaseIterator : thisUsersPurchases) {
-				if (nPurchases < (T - 1))
-					recentPurchasesInThisGroup[nPurchases] = purchaseIterator;
-				else if (nPurchases == (T - 1)) {
-					recentPurchasesInThisGroup[nPurchases] = purchaseIterator;
+				if (nPurchasesInThisNetwork < (T - 1))
+					recentPurchasesInThisGroup[nPurchasesInThisNetwork] = purchaseIterator;
+				else if (nPurchasesInThisNetwork == (T - 1)) {
+					recentPurchasesInThisGroup[nPurchasesInThisNetwork] = purchaseIterator;
 					Arrays.sort(recentPurchasesInThisGroup, purchaseComparator);
 				} else if (purchaseComparator.compare(
 						purchaseIterator,
@@ -207,14 +252,13 @@ public class AnomalousPurchaseDetector {
 					recentPurchasesInThisGroup[0] = purchaseIterator;
 					Arrays.sort(recentPurchasesInThisGroup, purchaseComparator);
 				}
-				nPurchases++;
+				nPurchasesInThisNetwork++;
 			}
 		}
-
-		if (nPurchases >= MINIMUM_NUMBER_OF_PURCHASES) {
-			int nPurchasesToConsider = nPurchases;
+		if (nPurchasesInThisNetwork >= MINIMUM_NUMBER_OF_PURCHASES) {
+			int nPurchasesToConsider = nPurchasesInThisNetwork;
 			if (nPurchasesToConsider > T) nPurchasesToConsider = T;
-			final MeanSTDCutoff cutoffResult = getCutOffValue(
+			final MeanSTDCutoff cutoffResult = new MeanSTDCutoff(
 					recentPurchasesInThisGroup,
 					nPurchasesToConsider);
 
@@ -332,36 +376,6 @@ public class AnomalousPurchaseDetector {
 		users.set(user_id, user);
 	}
 
-	/**
-	 * Function that calculates the mean and standard
-	 * deviation of an array of {@link Purchase} objects
-	 * and returns a {@link MeanSTDCutoff} object containing
-	 * the results.
-	 *
-	 * @param recentPurchasesInThisGroup Array of {@link Purchase} objects
-	 * @param nPurchasesToConsider       Number of purchases to consider in the above array
-	 * @return {@link MeanSTDCutoff} object containing the mean, std and cutoff results.
-	 */
-	 static MeanSTDCutoff getCutOffValue(
-			Purchase[] recentPurchasesInThisGroup,
-			final int nPurchasesToConsider) {
-		double mean = 0;
-		double std = 0;
-		for (int i = 0; i < nPurchasesToConsider; i++)
-			mean += recentPurchasesInThisGroup[i].amount;
-		mean = mean / nPurchasesToConsider;
-		for (int i = 0; i < nPurchasesToConsider; i++) {
-			final double thisAmount = recentPurchasesInThisGroup[i].amount;
-			std += (thisAmount - mean) * (thisAmount - mean);
-		}
-		std = Math.sqrt(std / nPurchasesToConsider);
-		MeanSTDCutoff result = new MeanSTDCutoff();
-
-		result.mean = mean;
-		result.std = std;
-		result.cutoff = mean + (std * NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF);
-		return result;
-	}
 
 	 static enum NetworkCalculationModel {
 		IGNORE_BEFRIEND_TIMING,
@@ -369,14 +383,36 @@ public class AnomalousPurchaseDetector {
 	}
 
 	/**
-	 * A class that holds mean, standard deviation and
-	 * cutoff values to be used by the
-	 * {@link AnomalousPurchaseDetector#getCutOffValue(Purchase[], int)} function.
+	 * A class that calculates and holds the mean, standard
+	 * deviation and cutoff values to be used by the
+	 * {@link AnomalousPurchaseDetector#checkForAnomaly(int, double, long)}
+	 * function.
 	 */
 	 static class MeanSTDCutoff {
 		double mean = 0;
 		double std = 0;
 		double cutoff = 0;
+
+		/**
+		 * The constructor calculates the mean and standard
+		 * deviation of an array of {@link Purchase} objects
+		 * and returns a {@link MeanSTDCutoff} object containing
+		 * the results.
+		 * @param recentPurchasesInThisGroup Array of {@link Purchase} objects
+		 * @param nPurchasesToConsider Number of purchases to consider in the above array
+		 */
+		MeanSTDCutoff(Purchase[] recentPurchasesInThisGroup,
+		              final int nPurchasesToConsider) {
+			for (int i = 0; i < nPurchasesToConsider; i++)
+				mean += recentPurchasesInThisGroup[i].amount;
+			mean = mean / nPurchasesToConsider;
+			for (int i = 0; i < nPurchasesToConsider; i++) {
+				final double thisAmount = recentPurchasesInThisGroup[i].amount;
+				std += (thisAmount - mean) * (thisAmount - mean);
+			}
+			std = Math.sqrt(std / nPurchasesToConsider);
+			cutoff = mean+NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF*std;
+		}
 	}
 
 	/**
@@ -422,10 +458,10 @@ public class AnomalousPurchaseDetector {
 		 void removeAFriend(final int user_id) {
 			final int friendIndex = friends.indexOf(user_id);
 			if (friendIndex == -1) {
-				System.out.println(
+				errorPrint(
 						"Warning: JSON asked to unfriend " +
 								id + " and " + user_id +
-								" but they were not friends to begin with.");
+								" but they were not friends to begin with.",null);
 				return;
 			}
 			friends.remove(friendIndex);
@@ -486,7 +522,6 @@ public class AnomalousPurchaseDetector {
 		 */
 		UserNetworkBuilder(List<Integer> userids,
 		                   List<Long> befriendedTime, int user_id) {
-			idsOfUsersInThisList = new ArrayList<>(userids);
 
 
 			switch (NETWORK_MODEL) {
@@ -498,9 +533,12 @@ public class AnomalousPurchaseDetector {
 						for (int user_in_the_group : temp_list)
 							unique_network_members.addAll(users.get(user_in_the_group).friends);
 					}
+					unique_network_members.remove(user_id);
+					idsOfUsersInThisList = new ArrayList<>(unique_network_members);
 
 					break;
 				case ACCOUNT_FOR_BEFRIEND_TIMING:
+					idsOfUsersInThisList = new ArrayList<>(userids);
 
 					befriendedDate = new ArrayList<>(befriendedTime);
 					for (int i = 2; i <= D; i++) {
