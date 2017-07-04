@@ -8,13 +8,59 @@ import java.text.SimpleDateFormat;
 import java.util.*;
 
 public class AnomalousPurchaseDetector {
+	/**
+	 * <p>This Enum constant determines if the Network calculation
+	 * accounts for the time when users were befriended or not.
+	 * The original problem description requires that the local
+	 * network around a user be calculated based on the instantaneous
+	 * list of friends that user has, and all transactions made
+	 * by these users in the past are listed and sorted to find the
+	 * {@link AnomalousPurchaseDetector#T} latest transactions for
+	 * anomaly calculation. </p>
+	 * <p>However, one can envisage a scenario where transactions made
+	 * by members of this group <i>before</i> they became members of
+	 * this group may not be extremely relevant. Hence, the network can
+	 * also be formed accounting for the befriending date of friends.
+	 * The default option is {@link NetworkCalculationModel#IGNORE_BEFRIEND_TIMING}
+	 * which also results in faster calculation of networks with higher
+	 * {@link AnomalousPurchaseDetector#D} values. Choosing
+	 * {@link NetworkCalculationModel#ACCOUNT_FOR_BEFRIEND_TIMING} would
+	 * account for befriend timing and calculate anomalous transactions
+	 * accordingly.</p>
+	 */
+	static final NetworkCalculationModel NETWORK_MODEL = NetworkCalculationModel.IGNORE_BEFRIEND_TIMING;
 
-	private static final int MINIMUM_NUMBER_OF_PURCHASES = 2;
-	private static final int NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF = 3;
-	private static final NetworkFormationModel NETWORK_MODEL = NetworkFormationModel.NETWORK_IGNORES_BEFRIEND_TIMING;
-	private static int D = 2;
-	private static int T = 50;
-	private static List<User> users = new ArrayList<>();
+	/**
+	 * The number of minimum purchases any network should have to even
+	 * check for anomalous transactions. Defaults to a value of 2.
+	 */
+	static final int MINIMUM_NUMBER_OF_PURCHASES = 2;
+	/**
+	 * The number of standard deviations above the mean of the most
+	 * recent {@link AnomalousPurchaseDetector#T} transactions a
+	 * particular transaction be to be considered anomalous.
+	 */
+	static final int NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF = 3;
+	/**
+	 * The variable which specifies how many degrees the network around
+	 * each user must be calculated for. Defaults to 2, and is read from
+	 * the JSON file if the appropriate JSON object is encountered.
+	 */
+	static int D = 2;
+	/**
+	 * The variable which specifies the number of transactions in the recent
+	 * past within a network that should be considered for anomaly calculation.
+	 */
+	 static int T = 50;
+	/**
+	 * Master ArrayList that holds all the {@link User} objects of the program.
+	 * The purchases made by these users are also stored inside their own objects.
+	 */
+	 static List<User> users = new ArrayList<>();
+
+	/**
+	 * Internal variables that are used to keep count, format dates and write files.
+ 	 */
 	private static long purchaseCount = 0, numberOfAnomalies = 0;
 	private static SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 	private static BufferedWriter writeOutputFile;
@@ -71,11 +117,10 @@ public class AnomalousPurchaseDetector {
 	 *                        function call the checkForAnomaly method
 	 *                        to check if purchases are anomalous.
 	 * @throws IOException    IOException is thrown if the file reading is interrupted.
-	 * @throws ParseException If the JSON format is malformed.
 	 */
-	private static void readJsonStream(
+	 static void readJsonStream(
 			InputStream in,
-			boolean checkForAnomaly) throws IOException, ParseException {
+			boolean checkForAnomaly) throws IOException {
 		BufferedReader br = new BufferedReader(new InputStreamReader(in));
 		String strLine;
 		Gson gson = new GsonBuilder().create();
@@ -108,6 +153,8 @@ public class AnomalousPurchaseDetector {
 					D = Integer.parseInt(jsonEvent.D);
 					T = Integer.parseInt(jsonEvent.T);
 				}
+			} catch(ParseException pe) {
+				System.out.println("Failed to parse line: "+strLine);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
@@ -121,7 +168,7 @@ public class AnomalousPurchaseDetector {
 	 * and builds a unique list of user-ids that form the
 	 * D<sup>th</sup> order network around the main user idsOfUsersInThisList.
 	 * Then it collects all valid purchases made by each of these
-	 * users (see {@link UserAndJoinDate#getValidPurchases(int)}) and finds the most recent
+	 * users (see {@link UserNetworkBuilder#getValidPurchases(int)}) and finds the most recent
 	 * T transactions. Finally, if it finds that  purchase to be more
 	 * than {@link AnomalousPurchaseDetector#NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF} standard deviations
 	 * above the mean of these transactions, its flagged as anomalous
@@ -132,28 +179,22 @@ public class AnomalousPurchaseDetector {
 	 * @param timestamp       The timestamp associated with the incoming purchase.
 	 * @throws IOException If there was a problem reading the file or writing to the file.
 	 */
-	private static void checkForAnomaly(
+	 static void checkForAnomaly(
 			final int user_id,
 			final double purchase_amount,
 			final long timestamp) throws IOException {
-		UserAndJoinDate local_group_ids = new UserAndJoinDate(
+
+		UserNetworkBuilder users_in_this_network = new UserNetworkBuilder(
 				users.get(user_id).friends,
-				users.get(user_id).befriendedTime);
-		for (int i = 2; i <= D; i++) {
-			List<Integer> temp_list = new ArrayList<>(local_group_ids.idsOfUsersInThisList);
-			for (int user_in_the_group : temp_list) {
-				local_group_ids.addAll(
-						users.get(user_in_the_group).friends,
-						users.get(user_in_the_group).befriendedTime,
-						user_id);
-			}
-		}
+				users.get(user_id).befriendedTime,
+				user_id);
+
 		int nPurchases = 0;
 
 		Purchase.ComparePurchaseDates purchaseComparator = new Purchase.ComparePurchaseDates();
 		Purchase[] recentPurchasesInThisGroup = new Purchase[T];
-		for (int i = 0; i < local_group_ids.idsOfUsersInThisList.size(); i++) {
-			List<Purchase> thisUsersPurchases = local_group_ids.getValidPurchases(i);
+		for (int i = 0; i < users_in_this_network.idsOfUsersInThisList.size(); i++) {
+			List<Purchase> thisUsersPurchases = users_in_this_network.getValidPurchases(i);
 			for (Purchase purchaseIterator : thisUsersPurchases) {
 				if (nPurchases < (T - 1))
 					recentPurchasesInThisGroup[nPurchases] = purchaseIterator;
@@ -169,6 +210,7 @@ public class AnomalousPurchaseDetector {
 				nPurchases++;
 			}
 		}
+
 		if (nPurchases >= MINIMUM_NUMBER_OF_PURCHASES) {
 			int nPurchasesToConsider = nPurchases;
 			if (nPurchasesToConsider > T) nPurchasesToConsider = T;
@@ -207,7 +249,7 @@ public class AnomalousPurchaseDetector {
 	 *
 	 * @param user_id Incoming user idsOfUsersInThisList to check and add.
 	 */
-	private static void checkAndCreateUserIfNeeded(
+	 static void checkAndCreateUserIfNeeded(
 			final int user_id) {
 		if (users.size() <= user_id) {
 			for (int i = users.size(); i < user_id; i++)
@@ -236,7 +278,7 @@ public class AnomalousPurchaseDetector {
 	 *                     if false , the action is to unfriend each other
 	 * @param timestamp    timestamp of the action
 	 */
-	private static void addOrRemoveFriendship(
+	 static void addOrRemoveFriendship(
 			final int id1,
 			final int id2,
 			final boolean befriendFlag,
@@ -266,7 +308,7 @@ public class AnomalousPurchaseDetector {
 	 * @param purchase_amount Purchase amount
 	 * @param timestamp       Purchase timestamp
 	 */
-	private static void addPurchase(
+	 static void addPurchase(
 			final int user_id,
 			final double purchase_amount,
 			final long timestamp) {
@@ -279,7 +321,7 @@ public class AnomalousPurchaseDetector {
 		purchase.user_id = user_id;
 		final int nPurchases = user.purchases.size();
 		if (nPurchases < T)
-		user.purchases.add(purchase);
+			user.purchases.add(purchase);
 		else
 			user.purchases.set(
 					user.purchases.indexOf(
@@ -300,7 +342,7 @@ public class AnomalousPurchaseDetector {
 	 * @param nPurchasesToConsider       Number of purchases to consider in the above array
 	 * @return {@link MeanSTDCutoff} object containing the mean, std and cutoff results.
 	 */
-	private static MeanSTDCutoff getCutOffValue(
+	 static MeanSTDCutoff getCutOffValue(
 			Purchase[] recentPurchasesInThisGroup,
 			final int nPurchasesToConsider) {
 		double mean = 0;
@@ -313,12 +355,6 @@ public class AnomalousPurchaseDetector {
 			std += (thisAmount - mean) * (thisAmount - mean);
 		}
 		std = Math.sqrt(std / nPurchasesToConsider);
-		/*SummaryStatistics summ = new SummaryStatistics();
-		for (int i = 0; i < nPurchasesToConsider; i++)
-			summ.addValue(recentPurchasesInThisGroup[i].amount);
-		MeanSTDCutoff result = new MeanSTDCutoff();
-		result.mean = summ.getMean();
-		result.std = summ.getStandardDeviation();*/
 		MeanSTDCutoff result = new MeanSTDCutoff();
 
 		result.mean = mean;
@@ -327,9 +363,9 @@ public class AnomalousPurchaseDetector {
 		return result;
 	}
 
-	private static enum NetworkFormationModel {
-		NETWORK_IGNORES_BEFRIEND_TIMING,
-		NETWORK_ACCOUNTS_BEFRIEND_TIMING
+	 static enum NetworkCalculationModel {
+		IGNORE_BEFRIEND_TIMING,
+		ACCOUNT_FOR_BEFRIEND_TIMING
 	}
 
 	/**
@@ -337,7 +373,7 @@ public class AnomalousPurchaseDetector {
 	 * cutoff values to be used by the
 	 * {@link AnomalousPurchaseDetector#getCutOffValue(Purchase[], int)} function.
 	 */
-	private static class MeanSTDCutoff {
+	 static class MeanSTDCutoff {
 		double mean = 0;
 		double std = 0;
 		double cutoff = 0;
@@ -348,7 +384,7 @@ public class AnomalousPurchaseDetector {
 	 * json file line by line. These are the only elements
 	 * expected to be read in from the json file.
 	 */
-	private static class JsonEventUnit {
+	 static class JsonEventUnit {
 		String D;
 		String T;
 		String event_type;
@@ -368,7 +404,7 @@ public class AnomalousPurchaseDetector {
 	 * purchases made by the user. It also includes methods that
 	 * can be used to add or remove friends to the user.
 	 */
-	private static class User {
+	 static class User {
 		int id;
 		ArrayList<Integer> friends = new ArrayList<>();
 		ArrayList<Long> befriendedTime = new ArrayList<>();
@@ -378,13 +414,20 @@ public class AnomalousPurchaseDetector {
 			purchases.ensureCapacity(T);
 		}
 
-		public void addAFriend(final int user_id, final long time_stamp) {
+		 void addAFriend(final int user_id, final long time_stamp) {
 			friends.add(user_id);
 			befriendedTime.add(time_stamp);
 		}
 
-		public void removeAFriend(final int user_id) {
+		 void removeAFriend(final int user_id) {
 			final int friendIndex = friends.indexOf(user_id);
+			if (friendIndex == -1) {
+				System.out.println(
+						"Warning: JSON asked to unfriend " +
+								id + " and " + user_id +
+								" but they were not friends to begin with.");
+				return;
+			}
 			friends.remove(friendIndex);
 			befriendedTime.remove(friendIndex);
 		}
@@ -399,16 +442,16 @@ public class AnomalousPurchaseDetector {
 	 * that can compare purchases based on different criteria
 	 * as desired.
 	 */
-	private static class Purchase {
+	 static class Purchase {
 		int user_id;
 		double amount;
 		long timestamp;
 		long purchaseOrder;
 
 		/**
-		 * A custom {@link Comparator} which compares {@link Purchase}
+		 * A custom {@link Comparator} class which compares {@link Purchase}
 		 * objects first by their timestamps, and if they match, then
-		 * by the order in which they were purchased.
+		 * by the order in which they were encountered in the json file.
 		 */
 		public static class ComparePurchaseDates implements Comparator<Purchase> {
 			@Override
@@ -429,19 +472,56 @@ public class AnomalousPurchaseDetector {
 
 
 	/**
-	 * A class that
+	 * A class that handles building and storing the local user network.
 	 */
-	private static class UserAndJoinDate {
+	static class UserNetworkBuilder {
 		List<Integer> idsOfUsersInThisList;
 		List<Long> befriendedDate;
 
-		UserAndJoinDate(List<Integer> userids,
-		                List<Long> befriendedTime) {
+		/**
+		 *
+		 * @param userids
+		 * @param befriendedTime
+		 * @param user_id
+		 */
+		UserNetworkBuilder(List<Integer> userids,
+		                   List<Long> befriendedTime, int user_id) {
 			idsOfUsersInThisList = new ArrayList<>(userids);
-			if (NETWORK_MODEL == NetworkFormationModel.NETWORK_ACCOUNTS_BEFRIEND_TIMING)
-				befriendedDate = new ArrayList<>(befriendedTime);
+
+
+			switch (NETWORK_MODEL) {
+				case IGNORE_BEFRIEND_TIMING:
+
+					HashSet<Integer> unique_network_members = new HashSet<>(userids);
+					for (int i = 2; i <= D; i++) {
+						final HashSet<Integer> temp_list = new HashSet<>(unique_network_members);
+						for (int user_in_the_group : temp_list)
+							unique_network_members.addAll(users.get(user_in_the_group).friends);
+					}
+
+					break;
+				case ACCOUNT_FOR_BEFRIEND_TIMING:
+
+					befriendedDate = new ArrayList<>(befriendedTime);
+					for (int i = 2; i <= D; i++) {
+						List<Integer> temp_list = new ArrayList<>(idsOfUsersInThisList);
+						for (int user_in_the_group : temp_list) {
+							this.addAll(
+									users.get(user_in_the_group).friends,
+									users.get(user_in_the_group).befriendedTime,
+									user_id);
+						}
+					}
+					break;
+			}
 		}
 
+		/**
+		 *
+		 * @param userids
+		 * @param incomingBefriendedTime
+		 * @param original_user_id
+		 */
 		void addAll(List<Integer> userids,
 		            List<Long> incomingBefriendedTime,
 		            final int original_user_id) {
@@ -450,43 +530,38 @@ public class AnomalousPurchaseDetector {
 				if (incoming_id == original_user_id)
 					continue;
 
-				switch (NETWORK_MODEL) {
-					case NETWORK_IGNORES_BEFRIEND_TIMING:
-						if (!idsOfUsersInThisList.contains(incoming_id))
-							idsOfUsersInThisList.add(incoming_id);
-
-						break;
-					case NETWORK_ACCOUNTS_BEFRIEND_TIMING:
-						if (idsOfUsersInThisList.contains(incoming_id)) {
-							final long dateRecorded =
-									befriendedDate.get(
-											idsOfUsersInThisList.indexOf(
-													incoming_id));
-							long dateIncoming = incomingBefriendedTime.get(i);
-							if (dateRecorded > dateIncoming)
-								befriendedDate.set(
-										idsOfUsersInThisList.indexOf(incoming_id), dateIncoming);
-						} else {
-							idsOfUsersInThisList.add(incoming_id);
-							befriendedDate.add(incomingBefriendedTime.get(i));
-						}
-						break;
+				if (idsOfUsersInThisList.contains(incoming_id)) {
+					final long dateRecorded =
+							befriendedDate.get(
+									idsOfUsersInThisList.indexOf(
+											incoming_id));
+					long dateIncoming = incomingBefriendedTime.get(i);
+					if (dateRecorded > dateIncoming)
+						befriendedDate.set(
+								idsOfUsersInThisList.indexOf(incoming_id), dateIncoming);
+				} else {
+					idsOfUsersInThisList.add(incoming_id);
+					befriendedDate.add(incomingBefriendedTime.get(i));
 				}
 
 
 			}
 		}
 
-
+		/**
+		 *
+		 * @param index
+		 * @return
+		 */
 		List<Purchase> getValidPurchases(int index) {
 			ArrayList<Purchase> validPurchases = new ArrayList<>();
 			final int thisUserID = idsOfUsersInThisList.get(index);
 			List<Purchase> allPurchases = users.get(thisUserID).purchases;
 			switch (NETWORK_MODEL) {
-				case NETWORK_IGNORES_BEFRIEND_TIMING:
+				case IGNORE_BEFRIEND_TIMING:
 					validPurchases.addAll(allPurchases);
 					break;
-				case NETWORK_ACCOUNTS_BEFRIEND_TIMING:
+				case ACCOUNT_FOR_BEFRIEND_TIMING:
 					final long thisUsersBefriendDate = befriendedDate.get(index);
 					validPurchases.ensureCapacity(allPurchases.size());
 					for (Purchase eachPurchase : allPurchases) {
