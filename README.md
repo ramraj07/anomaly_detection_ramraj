@@ -37,7 +37,7 @@ The overall flow of the program is as follows:
     * It is safe to skip lines of json input where the data cannot be parsed correctly (checks have been included in places where this could cause a catastrophic error, such as future unfriending events between friends that were never recorded). 
 
 ## Performance
-The program consistently completes the anomaly check for the given medium-sized file in less than one second on an entry-level Macbook Pro (total execution including base network calculation takes ~3 seconds). Increasing D value to 3 takes 8 seconds and continues to scale worse with higher D values. Given that the network becomes very large even with a D value of 2 (the network typically consisted of thousands of friends in the given example) and how the effect of individual friending and unfriending events will matter less in such large networks, other implementation changes should be considered if higher D values need to be regularly computed.
+The program consistently completes the anomaly check for the given medium-sized file in less than one second on an entry-level Macbook Pro (total execution including base network calculation takes ~3 seconds). Increasing D value to 3 takes 8 seconds and continues to scale worse with higher D values. Given that the network becomes very large even with a D value of 2 (the average network size for the given medium-sized example was 336 and contained on average 13,466 purchases) and how the effect of individual friending and unfriending events will matter less in such large networks, other implementation changes should be considered if higher D values need to be regularly computed.
 
 ## Error handling
 The program tries to handle errors smoothly in several places:
