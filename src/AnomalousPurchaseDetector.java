@@ -13,12 +13,16 @@ import java.util.*;
  * json file are anomalous (where they are 3 standard deviations above the
  * mean of purchases in a D<sup>th</sup> degree network around the user and
  * exports these purchases to an output file.</p>
+ * 
  * <p>The overall flow of the program is as follows:</p>
+ * 
  * <ol>
+ * 
  * <li>The {@link AnomalousPurchaseDetector#main(String[])}
  * function calls the readJsonStream() function for both
  * the batch and stream log files, with options to only check for
  * anomalies in the latter file.
+ * 
  * <li>The {@link AnomalousPurchaseDetector#readJsonStream(InputStream, boolean)}
  * function reads the json files one line
  * at a time and tries to load the data into a JsonEvent object.
@@ -29,10 +33,12 @@ import java.util.*;
  * objects as an {@link ArrayList} object in each
  * {@link User}) where the index of the object also conveniently
  * serves as the user id.
+ * 
  * <li>The {@link AnomalousPurchaseDetector#readJsonStream(InputStream, boolean)}
  * also calls the {@link AnomalousPurchaseDetector#checkForAnomaly(int, double, long)}
  * function for each encountered purchase when dealing with the
  * stream_log.json file.
+ * 
  * <li>The {@link AnomalousPurchaseDetector#checkForAnomaly(int, double, long)}
  * function first forms a friend network
  * of the {@link AnomalousPurchaseDetector#D}<sup>th</sup> degree
@@ -42,10 +48,12 @@ import java.util.*;
  * sorting performed by a custom {@link Comparator} object
  * ({@link Purchase.ComparePurchaseDates}) that implements
  * the sorting rule specified in the project).
+ * 
  * <li>It then identifies if the purchase amount is anomalous with
  * the help of a {@link MeanSTDCutoff} object. If the purchase is found to
  * be anomalous, the data is written to the output file in the
  * appropriate json format.
+ * 
  * </ol>
  */
 public class AnomalousPurchaseDetector {
@@ -58,6 +66,7 @@ public class AnomalousPurchaseDetector {
 	 * by these users in the past are listed and sorted to find the
 	 * {@link AnomalousPurchaseDetector#T} latest transactions for
 	 * anomaly calculation. </p>
+	 * 
 	 * <p>However, one can envisage a scenario where transactions made
 	 * by members of this group <i>before</i> they became members of
 	 * this group may not be extremely relevant. Hence, the network can
@@ -147,7 +156,7 @@ public class AnomalousPurchaseDetector {
 		System.out.println("Found " + numberOfAnomalies + " anomalies.");
 
 		System.out.println("Anomaly check took " +
-				(System.currentTimeMillis() - startTime) + " milliseconds");
+				(System.currentTimeMillis() - startTime) + " milliseconds..");
 		if (errorLogBuffer != null)
 			errorLogBuffer.close();
 	}
@@ -259,11 +268,13 @@ public class AnomalousPurchaseDetector {
 	/**
 	 * This is the function that checks for anomalous purchases.
 	 * First it takes the incoming user idsOfUsersInThisList who made the purchase
-	 * and builds their nearby network. It uses the {@link AnomalousPurchaseDetector#D} parameter
+	 * and builds their nearby network. It uses the 
+	 * {@link AnomalousPurchaseDetector#D} parameter
 	 * and builds a unique list of user-ids that form the
 	 * D<sup>th</sup> order network around the main user idsOfUsersInThisList.
 	 * Then it collects all valid purchases made by each of these
-	 * users (see {@link UserNetworkBuilder#getValidPurchases(int)}) and finds the most recent
+	 * users (see {@link UserNetworkBuilder#getValidPurchases(int)}) 
+	 * and finds the most recent
 	 * T transactions. Finally, if it finds that  purchase to be more
 	 * than {@link AnomalousPurchaseDetector#NUMBER_OF_STANDARD_DEVIATIONS_FOR_CUTOFF} standard deviations
 	 * above the mean of these transactions, its flagged as anomalous
@@ -340,7 +351,8 @@ public class AnomalousPurchaseDetector {
 
 	/**
 	 * Given a user idsOfUsersInThisList, this function first checks if
-	 * this user-idsOfUsersInThisList exists in the {@link AnomalousPurchaseDetector#users}
+	 * this user-idsOfUsersInThisList exists in the 
+	 * {@link AnomalousPurchaseDetector#users}
 	 * list already and if not, adds it to the list.
 	 *
 	 * @param user_id Incoming user idsOfUsersInThisList to check and add.
@@ -492,7 +504,8 @@ public class AnomalousPurchaseDetector {
 	 * instance of {@link User} stores the user {@link User#id},
 	 * a list of {@link User#friends} ids, a corresponding list of
 	 * time of befriending each of these friends, and a list of
-	 * {@link Purchase} objects holding the most recent {@link AnomalousPurchaseDetector#T}
+	 * {@link Purchase} objects holding the most recent 
+	 * {@link AnomalousPurchaseDetector#T}
 	 * purchases made by the user. It also includes methods that
 	 * can be used to add or remove friends to the user.
 	 */
